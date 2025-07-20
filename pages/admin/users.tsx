@@ -1,5 +1,15 @@
+//pages/admin/users.tsx
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import ResultModal from '@/components/ResultModal'; // Adjust path as needed
+
+type ResultData = {
+  name: string;
+  company: string;
+  leaderType: string;
+  scores: Record<string, number>;
+};
 
 type Company = {
   id: string;
@@ -17,6 +27,8 @@ type User = {
 };
 
 export default function AdminUsers() {
+  const [selectedResult, setSelectedResult] = useState<ResultData | null>(null);
+  const [showModal, setShowModal] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [email, setEmail] = useState('');
@@ -197,33 +209,36 @@ console.log('Fetched users:', data);
               </td>
               <td className="px-4 py-2 border text-sm">
                 {(user as any).self_assessments && (user as any).self_assessments.length > 0 ? (
-                  (() => {
-                    const sorted = [...(user as any).self_assessments]
-                      .filter((a) => a.leader_type) // Ensure it has a leader_type
-                      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+                  <div className="space-y-1">
+                    {(user as any).self_assessments.map((a: any) => (
+                      <div key={a.id}>
+                      <Link
+                        href={`/admin/results/${a.id}`}
+                        className="text-teal-600 hover:underline"
+                      >
+                        {a.leader_type}
+                      </Link>
 
-                    const latest = sorted[0];
 
-                    return latest ? (
-                      <div>
-                        <span className="font-medium text-teal-700">{latest.leader_type}</span><br />
-                        <span className="text-xs text-gray-500">
-                          {new Date(latest.created_at).toLocaleDateString()}
-                        </span>
+                        <div className="text-xs text-gray-500">
+                          {new Date(a.created_at).toLocaleDateString()}
+                        </div>
                       </div>
-                    ) : (
-                      <span className="text-gray-400">Not Started</span>
-                    );
-                  })()
+                    ))}
+                  </div>
                 ) : (
                   <span className="text-gray-400">Not Started</span>
                 )}
               </td>
-
             </tr>
           ))}
         </tbody>
       </table>
+            <ResultModal
+              result={selectedResult}
+              show={showModal}
+              onClose={() => setShowModal(false)}
+            />
 
     </div>
   );
