@@ -55,79 +55,59 @@ export default function DashboardPage() {
   const router = useRouter();
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) setUser(session.user);
-      else router.push('/auth');
-    });
-  }, [router]);
+    const loadDashboard = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
+        router.push('/auth');
+        return;
+      }
 
-  useEffect(() => {
-    if (!user) return;
+      setUser(session.user);
 
-    const fetchResults = async () => {
-      console.log("🔍 Fetching from Supabase for:", user.id);
+      const { data: userData } = await supabase
+        .from('users')
+        .select('role_id')
+        .eq('id', session.user.id)
+        .single();
 
-      const { data, error } = await supabase
-        .from('self_assessment')
+      const { data: roleData } = await supabase
+        .from('roles')
+        .select('name')
+        .eq('id', userData?.role_id)
+        .single();
+
+      const roleName = roleData?.name;
+
+      if (roleName === 'admin' || roleName === 'superadmin') {
+        console.log('✅ Admin detected, skipping assessment fetch.');
+        return;
+      }
+
+      const { data: assessment } = await supabase
+        .from('self_assessments')
         .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false }) // newest first
-        .limit(1)
-        .maybeSingle(); // ✅ prevents crash on 0 records
+        .eq('user_id', session.user.id)
+        .maybeSingle();
 
-      if (error) {
-        console.error("❌ Supabase fetch error:", error.message);
+      if (!assessment) {
+        console.warn('No assessment found — skipping display');
+        return;
       }
 
-      if (data) {
-        console.log("✅ Found in Supabase:", data);
+      const loadedScores = [
+        assessment.self_awareness, assessment.resilience, assessment.empathy, assessment.integrity,
+        assessment.collaboration, assessment.feedback, assessment.learning_agility, assessment.continuous_improvement,
+        assessment.influence, assessment.motivated, assessment.strategic_thinking, assessment.executive_functioning,
+        assessment.communication, assessment.networking, assessment.results_driven, assessment.presence
+      ];
 
-        const loadedScores = [
-          data.self_awareness, data.resilience, data.empathy, data.integrity,
-          data.collaboration, data.feedback, data.learning_agility, data.continuous_improvement,
-          data.influence, data.motivated, data.strategic_thinking, data.executive_functioning,
-          data.communication, data.networking, data.results_driven, data.presence
-        ];
-        setScores(loadedScores);
-        setLeaderType(getLeaderType(loadedScores));
-      } else {
-        console.log("❌ No record found in Supabase — falling back to localStorage");
-        // ⏳ Not in Supabase yet — fallback to localStorage
-        const raw = localStorage.getItem('assessment_scores');
-        const storedName = localStorage.getItem('user_name') || '';
-
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length === 16) {
-            const newLeaderType = getLeaderType(parsed);
-            setScores(parsed);
-            setLeaderType(newLeaderType);
-
-            const { error: insertError } = await supabase.from('self_assessment').insert({
-              user_id: user.id,
-              name: storedName,
-              email: user.email,
-              leader_type: newLeaderType.name,
-              self_awareness: parsed[0], resilience: parsed[1], empathy: parsed[2], integrity: parsed[3],
-              collaboration: parsed[4], feedback: parsed[5], learning_agility: parsed[6], continuous_improvement: parsed[7],
-              influence: parsed[8], motivated: parsed[9], strategic_thinking: parsed[10], executive_functioning: parsed[11],
-              communication: parsed[12], networking: parsed[13], results_driven: parsed[14], presence: parsed[15]
-            });
-
-            if (!insertError) {
-              console.log("🧠 Inserted from localStorage");
-              localStorage.removeItem('assessment_scores');
-              localStorage.removeItem('user_name');
-            }
-          }
-        } else {
-          console.log("❌ No local or Supabase data found");
-        }
-      }
+      setScores(loadedScores);
+      setLeaderType(getLeaderType(loadedScores));
     };
 
-    fetchResults();
-  }, [user]);
+    loadDashboard();
+  }, [router]);
+
 
 
   const handleLogout = async () => {

@@ -1,8 +1,10 @@
 //pages/admin/users.tsx
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/router';
 import { supabase } from '@/lib/supabase';
-import ResultModal from '@/components/ResultModal'; // Adjust path as needed
+import ResultModal from '@/components/ResultModal';
+import { useRoleCheck } from '@/hooks/useRoleCheck';
 
 type ResultData = {
   name: string;
@@ -16,59 +18,79 @@ type Company = {
   name: string;
 };
 
+type Role = {
+  id: string;
+  name: string;
+};
+
 type User = {
   id: string;
   email: string;
   name: string;
-  role: 'user' | 'admin' | 'superadmin';
+  role_id: string;
   company_id: string;
   created_at: string;
   invite_token?: string;
 };
 
 export default function AdminUsers() {
+  const [roles, setRoles] = useState<Role[]>([]); 
   const [selectedResult, setSelectedResult] = useState<ResultData | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
-  const [role, setRole] = useState<'user' | 'admin' | 'superadmin'>('user');
   const [companyId, setCompanyId] = useState('');
+  const [roleId, setRoleId] = useState('');
+  const router = useRouter();
+
 
 const fetchUsers = async () => {
-const { data, error } = await supabase
-  .from('users')
-  .select(`
-    id,
-    name,
-    email,
-    role,
-    created_at,
-    company_id,
-    invite_token,
-    companies ( name ),
-    self_assessments (
+  const { data, error } = await supabase
+    .from('users')
+    .select(`
       id,
+      name,
+      email,
+      role_id,
       created_at,
-      leader_type
-    )
-  `);
-console.log('Fetched users:', data);
+      company_id,
+      invite_token,
+      companies ( name ),
+      roles ( name ),
+      self_assessments (
+        id,
+        created_at,
+        leader_type
+      )
+    `);
+
 
   if (!error) setUsers(data || []);
   else console.error('Error loading users:', error.message);
 };
+
+const fetchRoles = async () => {
+  const { data, error } = await supabase.from('roles').select('id, name');
+  if (!error) setRoles(data || []);
+};
+
 
   const fetchCompanies = async () => {
     const { data, error } = await supabase.from('companies').select('*');
     if (!error) setCompanies(data || []);
   };
 
+  const { loading: roleLoading, hasAccess } = useRoleCheck(['admin', 'superadmin']);
+
   useEffect(() => {
-    fetchUsers();
-    fetchCompanies();
-  }, []);
+    if (hasAccess) {
+      fetchUsers();
+      fetchCompanies();
+      fetchRoles();
+    }
+  }, [hasAccess]);
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,7 +100,8 @@ console.log('Fetched users:', data);
       const res = await fetch('/api/invite-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, name, role, company_id: companyId }),
+        body: JSON.stringify({ email, name, role_id: roleId, company_id: companyId,password: 'Test1234!'}),
+
       });
 
       if (!res.ok) {
@@ -88,7 +111,7 @@ console.log('Fetched users:', data);
 
       setEmail('');
       setName('');
-      setRole('user');
+      setRoleId('');
       setCompanyId('');
       fetchUsers();
     } catch (err) {
@@ -117,6 +140,22 @@ console.log('Fetched users:', data);
     if (!error) fetchUsers();
   };
 
+  const handleRoleChange = async (userId: string, newRoleId: string) => {
+    const { error } = await supabase
+      .from('users')
+      .update({ role_id: newRoleId })
+      .eq('id', userId);
+
+    if (!error) {
+      setUsers(users.map(u => u.id === userId ? { ...u, role_id: newRoleId } : u));
+    } else {
+      console.error('Failed to update role:', error.message);
+    }
+  };
+
+  if (roleLoading) return <p>Loading permissions...</p>;
+  if (!hasAccess) return null;
+
   return (
     <div className="max-w-3xl mx-auto py-10 px-4">
       <h1 className="text-2xl font-bold mb-6">Manage Users</h1>
@@ -139,15 +178,6 @@ console.log('Fetched users:', data);
           required
         />
         <select
-          value={role}
-          onChange={(e) => setRole(e.target.value as any)}
-          className="w-full border px-3 py-2 rounded"
-        >
-          <option value="user">User</option>
-          <option value="admin">Admin</option>
-          <option value="superadmin">Superadmin</option>
-        </select>
-        <select
           value={companyId}
           onChange={(e) => setCompanyId(e.target.value)}
           className="w-full border px-3 py-2 rounded"
@@ -156,6 +186,18 @@ console.log('Fetched users:', data);
           {companies.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
+            </option>
+          ))}
+        </select>
+        <select
+          value={roleId}
+          onChange={(e) => setRoleId(e.target.value)}
+          className="w-full border px-3 py-2 rounded"
+        >
+          <option value="">Select Role</option>
+          {roles.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.name}
             </option>
           ))}
         </select>
@@ -181,7 +223,7 @@ console.log('Fetched users:', data);
             <tr key={user.id} className="hover:bg-gray-50">
               <td className="border px-4 py-2">{user.name}</td>
               <td className="border px-4 py-2">{user.email}</td>
-              <td className="border px-4 py-2 capitalize">{user.role}</td>
+              <td className="border px-4 py-2">{(user as any).roles?.name || '—'}</td>
               <td className="border px-4 py-2">
                 {(user as any).companies?.name || '—'}
               </td>

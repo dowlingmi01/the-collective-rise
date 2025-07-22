@@ -15,10 +15,15 @@ import {
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
 
 
-export default function MyApp({ Component, pageProps }: AppProps) {
-  return (
+export default function MyApp({ Component, pageProps, router }: AppProps) {
+  const noLayoutRoutes = ['/login', '/forgot-password'];
+  const isNoLayout = noLayoutRoutes.includes(router.pathname);
+
+  return isNoLayout ? (
+    <Component {...pageProps} />
+  ) : (
     <Layout>
       <Component {...pageProps} />
     </Layout>
-  )
+  );
 }
